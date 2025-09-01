@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "abi-to-sol": "^0.8.0"
+  }
+}

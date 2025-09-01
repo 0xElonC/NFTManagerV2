@@ -1,0 +1,61 @@
+{
+    "contractName": "IXYDExchangeV2",
+    "abi": [],
+    "metadata": "{\"compiler\":{\"version\":\"0.8.30+commit.73712a01\"},\"language\":\"Solidity\",\"output\":{\"abi\":[],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"d:/solidity/NFTManagerV3/src/interface/IXYDExchangeV2.sol\":\"IXYDExchangeV2\"},\"evmVersion\":\"prague\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[],\"viaIR\":true},\"sources\":{\"d:/solidity/NFTManagerV3/src/interface/IXYDExchangeV2.sol\":{\"keccak256\":\"0x01cade1d6297b16f20d204db4a0722968fb7455f2772c3e21a73f63a7f84a4af\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://10a0d5509c952a0cbabe01f0ef1fb777c6538efcc8a5c669c9b39ac254bcac18\",\"dweb:/ipfs/QmWiwHxQjrn6LjPTyLP9V8pabXFNBYgkHSgFfXBD2KRxgj\"]}},\"version\":1}",
+    "bytecode": "",
+    "deployedBytecode": "",
+    "sourceMap": "",
+    "deployedSourceMap": "",
+    "sourcePath": "d:/solidity/NFTManagerV3/src/interface/IXYDExchangeV2.sol",
+    "compiler": {
+        "name": "solc",
+        "version": "0.8.30+commit.73712a01"
+    },
+    "ast": {
+        "absolutePath": "d:/solidity/NFTManagerV3/src/interface/IXYDExchangeV2.sol",
+        "exportedSymbols": {
+            "IXYDExchangeV2": [
+                2
+            ]
+        },
+        "id": 3,
+        "license": "MIT",
+        "nodeType": "SourceUnit",
+        "nodes": [
+            {
+                "id": 1,
+                "literals": [
+                    "solidity",
+                    "^",
+                    "0.8",
+                    ".28"
+                ],
+                "nodeType": "PragmaDirective",
+                "src": "33:24:0"
+            },
+            {
+                "abstract": false,
+                "baseContracts": [],
+                "canonicalName": "IXYDExchangeV2",
+                "contractDependencies": [],
+                "contractKind": "interface",
+                "fullyImplemented": true,
+                "id": 2,
+                "linearizedBaseContracts": [
+                    2
+                ],
+                "name": "IXYDExchangeV2",
+                "nameLocation": "71:14:0",
+                "nodeType": "ContractDefinition",
+                "nodes": [],
+                "scope": 3,
+                "src": "61:35:0",
+                "usedErrors": [],
+                "usedEvents": []
+            }
+        ],
+        "src": "33:63:0"
+    },
+    "functionHashes": {},
+    "gasEstimates": null
+}
