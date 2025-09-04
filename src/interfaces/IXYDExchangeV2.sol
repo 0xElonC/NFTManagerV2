@@ -29,14 +29,25 @@ interface IXYDExchangeV2 {
     error TokenTransferFailded();//token转账失败
 
     event SetGovernor(address governor);
+    event SetDelegate(address delegate);
+    event SetPool(address pool);
 
-    function initialize(address ownerAddress, address delegateAddress) external;
+    function initialize(address ownerAddress, address delegateAddress, address poolAddress) external;
     function setGovernor(address governor) external;
     function getGovernor()external returns (address);
     function getDelegate() external view returns (address);
+    function setDelegate(address delegate) external;
+    function getPool() external view returns (address); 
+    function setPool(address pool) external;
+    ///test
+    function getOrderType()external view returns(bytes32);
+    function getFeeType()external view returns(bytes32);
+    function getDomainSeparator()external view returns(bytes32);
     /*//////////////////////////////////////////////////////////////
                           EXECUTION WRAPPERS
     //////////////////////////////////////////////////////////////*/
-    function takeAskSingle(TakeAskSingle memory inputs,bytes calldata oracleSignature)external payable;
+    //function takeAskSingle(TakeAskSingle memory inputs,bytes calldata oracleSignature)external payable;
+    function takeAskSingle(TakeAskSingle memory inputs)external payable;
+    function takeBidSingle(TakeBidSingle memory inputs)external payable;
 
 }

@@ -71,6 +71,7 @@ contract Validation is IValidation, Signatures{
         Exchange memory exchange
     )internal pure returns(bool validListing){
         Listing memory listing = exchange.listing;
+
         validListing = MerkleProof.verify(exchange.proof,order.listingsRoot,hashListing(listing));
         Taker memory taker = exchange.taker;
         //卖方是挂单

@@ -28,6 +28,7 @@ import {
     Listing
 } from "../src/struct/Structs.sol";
 import "lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { MerkleProof } from "lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol";
 
 contract XYDExchangeV2Test is Test{
     //核心合约
@@ -53,21 +54,20 @@ contract XYDExchangeV2Test is Test{
     // ========== 测试结构体实例 ==========
     TakeAskSingle public testTakeAskSingle; // 待测试的 TakeAskSingle 结构体
     bytes public testSignature; // 卖家对订单的签名
-
+    using MerkleProof for bytes32[];
     function setUp() public{
         seller = vm.addr(sellerPK);
         buyer  = vm.addr(buyerPK);
         owner  = address(this);
+        console.log(seller);
         vm.startPrank(owner);
-        // 部署合约实例
-  
         delegate = new Delegate(owner);
-        xydExchangeV2 = new XYDExchangeV2();//部署实现
+        xydExchangeV2 = new XYDExchangeV2();
         console.log(unicode"实现合约 XYDManagerV2 部署地址:", address(xydExchangeV2));
 
         bytes memory initData = abi.encodeCall(
             IXYDExchangeV2.initialize,
-            (owner,address(delegate))
+            (owner,address(delegate),address(0))
         );
 
         exchangeProxy = new ERC1967Proxy(address(xydExchangeV2),initData);// 先不给 initData，等会手动初始化
@@ -75,10 +75,9 @@ contract XYDExchangeV2Test is Test{
 
         exchange = IXYDExchangeV2(address(exchangeProxy));
         exchange.setGovernor(owner);
-        
+        delegate.approveContract(address(exchangeProxy));
         // 验证关联是否正确
         assertEq(exchange.getDelegate(), address(delegate));
-
         //部署测试NFT
         nft = new TestERC721("TestNFT","TNT",owner);
         TEST_COLLECTION = address(nft);
@@ -87,7 +86,8 @@ contract XYDExchangeV2Test is Test{
         nft.setApprovalForAll(address(delegate),true);
 
         //初始化TaskAskSingle所需的结构体
-        Order memory testOrder = _createTestOrder();
+        Listing memory testListing = _createTestListing();
+        Order memory testOrder = _createTestOrder(testListing);
         Exchange memory testExchange = _createTestExchange(); // 生成测试 Exchange
         FeeRate memory testTakerFee = _createTestFeeRate(); // 生成测试手续费
 
@@ -103,28 +103,41 @@ contract XYDExchangeV2Test is Test{
             tokenRecipient:buyer
         });
 
-        vm.deal(buyer,10 ether);
+        vm.deal(buyer,2 ether);
     }
     /// @notice 测试 部署初始化 是否成功
     function test_Deployment_Initialization() public {
-
         // 验证 governor 变量（如果已设置）
         assertEq(exchange.getGovernor(), owner, unicode"Governor 初始化错误");
     }
 
-    //辅助函数
+    //-------------------------------辅助函数--------------------------
+    function _createTestListing() internal view returns(Listing memory){
+        return Listing({
+            index:0,
+            tokenId:1,
+            amount:1,
+            price:1000000000000000000 wei
+        });
+    }
     /**
      * @dev 生成测试 Order 结构体
      */
-    function _createTestOrder() internal view returns (Order memory) {
+    function _createTestOrder(Listing memory listing) internal view returns (Order memory) {
+        bytes32 listinghash = keccak256(abi.encode(
+            listing.index,
+            listing.tokenId,
+            listing.amount,
+            listing.price
+        ));
         return Order({
             trader: seller, // 订单卖家（签名者）
             collection: TEST_COLLECTION, // 测试藏品地址
-            listingsRoot: bytes32(0x00), // 简化测试：默认为空（若需要 Merkle 根，需生成真实根）
+            listingsRoot: listinghash,
             numberOfListings: 1, // 订单包含 1 个 listing
             expirationTime: EXPIRATION_TIME, // 24小时后过期
             assetType: AssetType.ERC721, // 测试 ERC721 类型
-            makerFee: FeeRate({recipient: seller, rate: 50}), // 卖家手续费：50bps（0.5%）
+            makerFee: FeeRate({recipient: 0x1000000000000000000000000000000000000000, rate: 50}), // 卖家手续费：50bps（0.5%）
             salt: SALT // 随机盐值
         });
     }
@@ -163,41 +176,50 @@ contract XYDExchangeV2Test is Test{
      * @return 签名结果（bytes）
      */
     function _signOrder(Order memory order, uint256 privateKey) internal view returns (bytes memory) {
+
+        bytes32 orderType = exchange.getOrderType();
+        console.logBytes32(orderType);
         // 1. 将 Order 编码为哈希（需与合约中签名验证的编码逻辑完全一致！）
         bytes32 orderHash = keccak256(abi.encode(
+            orderType,
             order.trader,
             order.collection,
             order.listingsRoot,
             order.numberOfListings,
             order.expirationTime,
             order.assetType,
-            order.makerFee,
+            _hashFeeRate(order.makerFee),
             order.salt,
-            address(exchange) // 关键：加入代理合约地址防重放（若合约验证时包含）
+            OrderType.ASK,
+            0
         ));
 
+        console.log("----orderHash-----");
+        console.logBytes32(orderHash);
+
         // 2. 用 ECDSA 签名（若合约用了 EIP-712，需替换为 EIP-712 签名逻辑）
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, orderHash);
+        (uint8 v, bytes32 r, bytes32 s) =_hashToSign(privateKey, orderHash);
         return abi.encodePacked(r, s, v); // 组装签名（r + s + v 格式）
     }
 
     function test_takeAskSingle_Success() public {
     // 1. 模拟买家调用 takeAskSingle（需先授权 NFT？若需要）
-    vm.startPrank(buyer); // 切换为买家身份
+    vm.startPrank(buyer); 
     uint256 beforeBuyerEth = buyer.balance; // 记录买家调用前 ETH 余额
+    console.log(beforeBuyerEth);
 
     // 2. 调用 takeAskSingle（需传入 ETH 支付订单价格）
-    exchange.takeAskSingle{value: TEST_PRICE}(testTakeAskSingle,testSignature); // 传 1 ETH 支付
+    exchange.takeAskSingle{value: 2 ether}(testTakeAskSingle); // 传 2 ETH 支付
 
     // 3. 验证结果（根据合约逻辑调整断言）
     // 3.1 验证买家 ETH 减少（价格 + 手续费）
     uint256 takerFeeAmount = (TEST_PRICE * testTakeAskSingle.takerFee.rate) / 10000; // 1% 手续费
-    uint256 expectedEthSpent = TEST_PRICE + takerFeeAmount;
+    uint256 makerFeeAmount = (TEST_PRICE * testTakeAskSingle.order.makerFee.rate) / 10000; // 0.5% 卖家手续费
+    uint256 expectedEthSpent = TEST_PRICE + takerFeeAmount+makerFeeAmount;
     assertEq(beforeBuyerEth - buyer.balance, expectedEthSpent, unicode"买家 ETH 消耗错误");
 
-    // 3.2 验证卖家收到订单金额（扣除卖家手续费）
-    uint256 makerFeeAmount = (TEST_PRICE * testTakeAskSingle.order.makerFee.rate) / 10000; // 0.5% 卖家手续费
-    uint256 expectedSellerReceive = TEST_PRICE - makerFeeAmount;
+    // 3.2 验证卖家收到订单金额
+    uint256 expectedSellerReceive = TEST_PRICE;
     assertEq(seller.balance, expectedSellerReceive, unicode"卖家未收到订单金额");
 
     // 3.3 验证手续费接收地址收到手续费
@@ -209,4 +231,37 @@ contract XYDExchangeV2Test is Test{
     // ERC721(TEST_COLLECTION).ownerOf(TEST_TOKEN_ID) == buyer;
     // 若测试环境中藏品合约未部署，可忽略此步或用 Mock 合约
 }
+    function _hashFeeRate(
+        FeeRate memory feeRate
+    )public view returns(bytes32){
+        bytes32 _FEE_TYPEHASH = exchange.getFeeType();
+        return keccak256(
+            abi.encode(
+                _FEE_TYPEHASH,
+                feeRate.recipient,
+                feeRate.rate
+            )
+        );
+    }
+    /**
+     * 获取EIP712签名信息
+     * @param orderhash 订单哈希
+     */
+    function _hashToSign(
+        uint256 pk,
+        bytes32 orderhash
+    )internal view returns(uint8 v, bytes32 r, bytes32 s){
+        bytes32 _DOMAIN_SEPARATOR = exchange.getDomainSeparator();
+        console.log("_DOMAIN_SEPARATOR");
+        console.logBytes32(_DOMAIN_SEPARATOR);
+        bytes32 signatures =  keccak256(
+            bytes.concat(
+                bytes2(0x1901),
+                _DOMAIN_SEPARATOR,
+                orderhash)
+        );
+        console.log("signatures");
+        console.logBytes32(signatures);
+        ( v,  r,  s) = vm.sign(pk, signatures);
+    }
 }
