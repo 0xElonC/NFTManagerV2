@@ -213,17 +213,24 @@ contract XYDExchangeV2 is
         //返回dust
         _transferETH(msg.sender,address(this).balance);
     }
-
+    /**
+     * 单独出价订单
+     * @param order 挂单合计
+     * @param exchange 撮合订单体
+     * @param takerFee 吃单手续费
+     * @param signatures 挂单签名
+     */
     function _takeBidSingle(
         Order memory order,
         Exchange memory exchange,
         FeeRate memory takerFee,
-        bytes memory signatures
+        bytes memory signature
     )internal {
         Fees memory fees = Fees(protocolFee,takerFee);
         Taker memory taker = exchange.taker;
         uint256 listingAmount = exchange.listing.amount;
-        if(!_validateOrderAndListing(order, OrderType.BID, exchange, signatures, fees)){
+        //验证挂单
+        if(!_validateOrderAndListing(order, OrderType.BID, exchange, signature, fees)){
             revert InvalidOrder();
         }
 
@@ -259,6 +266,66 @@ contract XYDExchangeV2 is
         }
     }
     
+    function _takeAsk(
+        Order[] memory orders,
+        Exchange[] memory exchanges,
+        FeeRate memory takerFee,
+        bytes memory signature,
+        address tokenRecipent
+    ) internal {
+        Fees memory fees = Fees(protocolFee,takerFee);
+        //验证所有的orders
+        (bool[] memory validOrders,uint256[][] memory pendingAmountTaken) = _validateOrders(
+            order,
+            orderType.Ask,
+            signatures,
+            fees);
+
+        uint256 exchangesLength = exchanges.length;
+
+        //初始化交易批次和资金结算
+        (bytes memory executionBatch,FungibleTransfers memory fungibleTransfers) = _initializeBatch(exchangesLength, OrderType.ASK, tokenRecipent);
+        uint256 remainingEth = address(this).balance;
+        Order memory order;
+        Exchange memory exchange;
+        for(uint256 i;i<exchangesLength;i++){
+            exchange = exchanges[i];
+            order = orders[exchange.index];
+            //验证Listing
+            if(
+                _validateListingFromBatch(
+                    order,
+                    OrderType.ASK,
+                    exchange,
+                    validOrders,
+                    pendingAmountTaken
+                )
+            ){
+                //插入数据进入execution的Transfer[]
+                bool inserted;
+                (remainingEth,inserted) = _insertExecutionAsk(
+                    executionBatch,
+                    fungibleTransfers,
+                    order,
+                    validOrders,
+                    fees,
+                    remainingEth
+                );
+                if(inserted){
+                    pendingAmountTaken[exchange.index][exchange.listing.index] += exchange.taker.amount;
+                }
+            }
+        }
+
+        //执行所有交易
+        _executeBatchTransfer(executionBatch,fungibleTransfers,fees,OrderType.ASK);
+
+        //返回余额
+        _transferETH(msg.sender, address(this).balance);
+    }
+    /*//////////////////////////////////////////////////////////////
+                          EXECUTION HELPERS
+    //////////////////////////////////////////////////////////////*/
     /**
      * 构建交易执行内容
      */
@@ -280,5 +347,52 @@ contract XYDExchangeV2 is
             mstore(add(executionBatchOffset,ExecutionBatch_transfers_offset),1)
         }
         _insertNonfungibleTransfer(executionBatch,order,tokenId,amount);
+    }
+    /**
+     * 初始化批量执行批次
+     * @param exchangesLength 撮合交易数量
+     * @param orderType 订单类型
+     * @param taker 吃单者
+     * @return executionBatch 交易执行批次  
+     * @return fungibleTransfers 资金结算
+     */
+    function _initializeBatch(
+        uint256 exchangesLength,
+        OrderType orderType,
+        address taker
+    ) internal pure returns(bytes memory executionBatch,FungibleTransfers memory fungibleTransfers){
+        uint256 arratLength = Transfer_size * exchangesLength + One_word;
+        uint256 executionBatchLength = ExecutionBatch_base_size + arrayLength;
+        executionBatch = new bytes(executionBatchLength);
+        assembly {
+            let calldataPointer := add(executionBatch,ExecutionBatch_calldata_offset)
+            mstore(add(calldataPointer,ExecutionBatch_taker_offset),taker)
+            mstore(add(calldataPointer,ExecutionBatch_orderType_offset),orderType)
+            mstore(add(calldataPointer,ExecutionBatch_transfers_pointer_offset),ExecutionBatch_transfers_offset)//transfer数组内存位置
+            mstore(add(calldataPointer,ExecutionBatch_length_offset),exchangesLength)
+        }
+
+        //初始化资金结算
+        AtomicExecution[] memory executions = new AtomicExecution[](exchangesLength);
+        //初始化Fees接受账户
+        address[] memory feeRecipients = new address[](exchangesLength);
+        //初始化订单创建者
+        address[] memory makers = new address[](exchangesLength);
+        //初始化订单创建者交易金额
+        uint256[] memory makersTransfers = new uint256[](exchangesLength);
+        uint256[] memory feeTransfers = new uint256[](exchangesLength);
+        //初始化资金结算
+        fungibleTransfers = FungibleTransfers({
+            totalProtocolFee:0,
+            totalSellerTransfer:0,
+            totalTakerFee:0,
+            feeRecipientId: 0,
+            makerId:0,
+            feeRecipients:feeRecipients,
+            makers:makers,
+            makerTransfers:makersTransfers,
+            feeTransfers:feeTransfers,
+            executions:executions
+        });
     }
 }
